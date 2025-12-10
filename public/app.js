@@ -379,6 +379,20 @@ class S3Viewer {
         try {
             console.log('📂 Iniciando carga de archivo:', file.name);
             console.log('📦 Tamaño del archivo:', file.size, 'bytes');
+            console.log('📦 Tamaño en MB:', (file.size / (1024 * 1024)).toFixed(2), 'MB');
+
+            // Verificar tamaño máximo (50MB)
+            const MAX_FILE_SIZE = 50 * 1024 * 1024;
+            if (file.size > MAX_FILE_SIZE) {
+                throw new Error(`Archivo demasiado grande. Máximo: 50MB, Archivo: ${(file.size / (1024 * 1024)).toFixed(2)}MB`);
+            }
+
+            // Liberar documento anterior si existe
+            if (this.doc) {
+                console.log('🧹 Liberando documento anterior...');
+                try { this.doc.delete(); } catch (e) { console.warn('No se pudo eliminar doc anterior'); }
+                this.doc = null;
+            }
 
             console.log('🔄 Leyendo arrayBuffer...');
             const arrayBuffer = await file.arrayBuffer();
@@ -388,8 +402,12 @@ class S3Viewer {
             const arr = new Uint8Array(arrayBuffer);
             console.log('✅ Uint8Array creado, length:', arr.length);
 
-            // Leer archivo 3dm
+            // Leer archivo 3dm con timeout
             console.log('🔄 Parseando archivo 3dm con rhino3dm...');
+
+            // Usar setTimeout para dar tiempo al UI de actualizar
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             this.doc = this.rhino.File3dm.fromByteArray(arr);
             console.log('✅ Archivo 3dm parseado correctamente');
 
@@ -1733,6 +1751,7 @@ class S3Viewer {
     async loadFromBase64(base64String, fileName) {
         try {
             console.log('📱 Cargando archivo desde Android:', fileName);
+            console.log('📦 Base64 length:', base64String.length);
             this.showLoading(true);
 
             // Esperar a que rhino3dm esté listo
@@ -1747,9 +1766,26 @@ class S3Viewer {
                 throw new Error('rhino3dm no está inicializado');
             }
 
+            // Liberar documento anterior si existe
+            if (this.doc) {
+                console.log('🧹 Liberando documento anterior...');
+                try { this.doc.delete(); } catch (e) { console.warn('No se pudo eliminar doc anterior'); }
+                this.doc = null;
+            }
+
             // Decodificar Base64 a ArrayBuffer
+            console.log('🔄 Decodificando Base64...');
             const binaryString = atob(base64String);
             const len = binaryString.length;
+            console.log('📦 Bytes a procesar:', len);
+            console.log('📦 MB a procesar:', (len / (1024 * 1024)).toFixed(2));
+
+            // Verificar tamaño máximo (50MB)
+            const MAX_FILE_SIZE = 50 * 1024 * 1024;
+            if (len > MAX_FILE_SIZE) {
+                throw new Error(`Archivo demasiado grande. Máximo: 50MB, Archivo: ${(len / (1024 * 1024)).toFixed(2)}MB`);
+            }
+
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
@@ -1757,29 +1793,49 @@ class S3Viewer {
 
             console.log('✅ Base64 decodificado, bytes:', bytes.length);
 
+            // Dar tiempo al UI de actualizar
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             // Leer archivo con rhino3dm
+            console.log('🔄 Parseando con rhino3dm...');
             this.doc = this.rhino.File3dm.fromByteArray(bytes);
 
             console.log('✅ Archivo cargado:', fileName);
             console.log('📊 Objetos:', this.getCount(this.doc.objects()), '| Capas:', this.getCount(this.doc.layers()));
 
+            // Dar tiempo al UI
+            await new Promise(resolve => setTimeout(resolve, 50));
+
             // Limpiar escena anterior
+            console.log('🧹 Limpiando escena...');
             this.clearScene();
 
             // Procesar archivo
+            console.log('🔄 Procesando capas...');
             this.processLayers();
+
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log('🔄 Procesando objetos...');
             this.processObjectsWithMeshes();
+
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            console.log('🔄 Procesando dots...');
             this.processDots();
 
             // Actualizar UI
+            console.log('🔄 Actualizando UI...');
             this.updateLayerList();
             this.updateDotsList();
             this.updateFileInfo(fileName);
 
             // Ajustar cámara
+            console.log('📐 Ajustando cámara...');
             this.fitCameraToScene();
 
             this.showLoading(false);
+            console.log('🎉 Carga completada exitosamente');
 
             // Notificar a Android que se cargó correctamente
             if (window.Android && window.Android.onModelLoaded) {
@@ -1787,7 +1843,19 @@ class S3Viewer {
             }
         } catch (error) {
             console.error('❌ Error al cargar archivo desde Base64:', error);
+            console.error('❌ Stack:', error.stack);
             this.showLoading(false);
+
+            // Mostrar error en pantalla
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'position:fixed;top:50px;left:10px;right:10px;background:red;color:white;padding:15px;z-index:9999;font-size:11px;max-height:300px;overflow:auto;';
+            errorDiv.innerHTML = `
+                <strong>Error al cargar archivo:</strong><br>
+                ${error.name}: ${error.message}<br><br>
+                <strong>Stack:</strong><br>
+                ${error.stack ? error.stack.replace(/\n/g, '<br>') : 'No disponible'}
+            `;
+            document.body.appendChild(errorDiv);
 
             // Notificar error a Android
             if (window.Android && window.Android.onError) {
