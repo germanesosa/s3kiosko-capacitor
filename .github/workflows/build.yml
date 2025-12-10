@@ -32,10 +32,12 @@ jobs:
     
     - name: Copy public assets to dist
       run: cp -r public/* dist/
-    
-    - name: Sync Capacitor
-      run: npx cap sync android
-    
+
+    - name: Copy dist to Android assets
+      run: |
+        rm -rf android/app/src/main/assets/public/*
+        cp -r dist/* android/app/src/main/assets/public/
+
     - name: Build APK
       working-directory: android
       run: ./gradlew assembleDebug
