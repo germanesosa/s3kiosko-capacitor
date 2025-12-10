@@ -8,40 +8,20 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-    
+
     - name: Setup Java
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
-    
-    - name: Install dependencies
-      run: npm ci
-    
-    - name: Build web assets
-      run: npm run build
-    
-    - name: Copy public assets to dist
-      run: cp -r public/* dist/
-
-    - name: Copy dist to Android assets
-      run: |
-        rm -rf android/app/src/main/assets/public/*
-        cp -r dist/* android/app/src/main/assets/public/
 
     - name: Build APK
       working-directory: android
       run: ./gradlew assembleDebug
-    
+
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
