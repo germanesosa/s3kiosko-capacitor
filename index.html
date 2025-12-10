@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3 Viewer - Visualizador de Archivos Rhino</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Modo Android: ocultar sidebar y header del web */
+        body.android-mode .sidebar,
+        body.android-mode header,
+        body.android-mode #showConsoleBtn {
+            display: none !important;
+        }
+        body.android-mode .main-content {
+            display: block !important;
+        }
+        body.android-mode .viewer-container {
+            width: 100% !important;
+            height: 100vh !important;
+        }
+        body.android-mode .container {
+            padding: 0 !important;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        // Detectar si estamos en Android WebView
+        if (window.Android) {
+            document.body.classList.add('android-mode');
+        }
+    </script>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>🎯 S3 Viewer</h1>
+            <p>Visualizador de archivos Rhino 3DM</p>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="panel">
+                    <h2>📁 Cargar Archivo</h2>
+                    <div class="upload-section">
+                        <input type="file" id="fileInput" accept=".3dm" />
+                        <button id="uploadBtn" class="btn-primary">Cargar .3dm</button>
+                    </div>
+                    <div id="fileInfo" class="file-info"></div>
+
+                    <h3 style="margin-top: 1rem; font-size: 0.9rem; color: #888;">Archivos Disponibles</h3>
+                    <div id="availableFiles" class="available-files">
+                        <p class="empty-state">Cargando...</p>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>🔍 Filtros de Capas</h2>
+                    <div class="filter-controls">
+                        <!-- Filtros deshabilitados - solo GS y S3 activos
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterGS" checked />
+                            <span>GS:: (Patrones)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterS3" checked />
+                            <span>S3:: (S3Studio)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterBND" />
+                            <span>BND (Bordes)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterOUT" />
+                            <span>OUT (Exportados)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterTS" />
+                            <span>TS:: (Tiras)</span>
+                        </label>
+                        -->
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterDECO" />
+                            <span>DECO (Decoración)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterAUX" />
+                            <span>AUX (Auxiliares)</span>
+                        </label>
+                    </div>
+                    <button id="applyFilters" class="btn-primary" style="margin-top: 0.5rem; width: 100%;">
+                        Aplicar Filtros
+                    </button>
+                </div>
+
+                <div class="panel">
+                    <h2>📋 Capas</h2>
+                    <div class="search-box">
+                        <input type="text" id="layerSearch" placeholder="Buscar capa..." />
+                    </div>
+                    <div id="layerList" class="layer-list">
+                        <p class="empty-state">Carga un archivo para ver las capas</p>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>🏷️ TextDots</h2>
+                    <div class="controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="showDots" checked />
+                            <span>Mostrar TextDots</span>
+                        </label>
+                    </div>
+                    <div id="dotsList" class="dots-list">
+                        <p class="empty-state">No hay dots en el archivo</p>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>ℹ️ Información</h2>
+                    <div id="objectInfo" class="object-info">
+                        <p class="empty-state">Haz clic en un objeto para ver información</p>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Viewer -->
+            <main class="viewer-container">
+                <div id="viewer" class="viewer">
+                    <div class="loading-overlay" id="loadingOverlay">
+                        <div class="spinner"></div>
+                        <p>Cargando archivo...</p>
+                    </div>
+                </div>
+                <div class="viewer-controls">
+                    <button id="resetView" class="btn-control" title="Resetear vista">🔄</button>
+                    <button id="topView" class="btn-control" title="Vista superior">⬆️</button>
+                    <button id="frontView" class="btn-control" title="Vista frontal">➡️</button>
+                    <button id="wireframeToggle" class="btn-control" title="Wireframe">🔲</button>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Console Log Viewer (para debugging en móviles) -->
+    <div id="consoleViewer" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.95); color:#0f0; padding:60px 20px 20px 20px; overflow:auto; z-index:10000; font-family:monospace; font-size:11px; line-height:1.4;">
+        <button onclick="document.getElementById('consoleViewer').style.display='none'" style="position:fixed; top:10px; right:10px; padding:10px 20px; background:red; color:white; border:none; border-radius:5px; font-size:14px; cursor:pointer; z-index:10001;">Cerrar</button>
+        <button onclick="document.getElementById('consoleContent').innerHTML=''" style="position:fixed; top:10px; left:10px; padding:10px 20px; background:#667eea; color:white; border:none; border-radius:5px; font-size:14px; cursor:pointer; z-index:10001;">Limpiar</button>
+        <div id="consoleContent"></div>
+    </div>
+
+    <!-- Botón flotante para abrir consola -->
+    <button id="showConsoleBtn" style="position:fixed; bottom:20px; right:20px; width:60px; height:60px; border-radius:50%; background:#667eea; color:white; border:none; font-size:24px; box-shadow:0 4px 8px rgba(0,0,0,0.3); z-index:9999; cursor:pointer;">
+        📋
+    </button>
+
+    <!-- Scripts - Todos locales para compatibilidad con Android WebView -->
+    <script src="three.min.js"></script>
+    <script src="OrbitControls.js"></script>
+    <script src="rhino3dm.js"></script>
+    <script src="app.js?v=37"></script>
+</body>
+</html>
+
