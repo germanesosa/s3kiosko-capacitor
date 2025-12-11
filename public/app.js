@@ -229,21 +229,31 @@ class S3Viewer {
                 console.log('🤖 Android detectado - curvas se renderizarán como tubos para compatibilidad');
             }
 
-            // Renderer para GPUs modernos (Adreno 830, etc.)
+            // Renderer optimizado para evitar crash de memoria en Android
+            // El crash ocurre en libgui.so BLASTBufferQueue cuando hay demasiada carga gráfica
             try {
                 this.renderer = new THREE.WebGLRenderer({
-                    antialias: true,
-                    powerPreference: 'high-performance',
-                    precision: 'highp'
+                    antialias: !this.isMobile, // Sin antialiasing en móviles para reducir memoria
+                    powerPreference: this.isMobile ? 'low-power' : 'high-performance',
+                    precision: this.isMobile ? 'mediump' : 'highp', // Menor precisión en móviles
+                    preserveDrawingBuffer: false, // No preservar buffer para liberar memoria
+                    stencil: false, // Deshabilitar stencil buffer
+                    depth: true
                 });
-                console.log('✅ WebGLRenderer creado');
+                console.log('✅ WebGLRenderer creado (modo móvil optimizado:', this.isMobile, ')');
             } catch (e) {
                 console.error('❌ Error creando WebGLRenderer:', e);
                 throw e;
             }
 
-            this.renderer.setSize(container.clientWidth || 800, container.clientHeight || 600);
-            this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.isMobile ? 1.5 : 2));
+            // Limitar tamaño del canvas en móviles para evitar crash de memoria
+            const maxSize = this.isMobile ? 1024 : 2048;
+            const width = Math.min(container.clientWidth || 800, maxSize);
+            const height = Math.min(container.clientHeight || 600, maxSize);
+            this.renderer.setSize(width, height);
+
+            // Pixel ratio muy bajo en móviles para evitar crash en BLASTBufferQueue
+            this.renderer.setPixelRatio(this.isMobile ? 1 : Math.min(window.devicePixelRatio, 2));
             container.appendChild(this.renderer.domElement);
 
             // Log de información del renderer
@@ -571,6 +581,13 @@ class S3Viewer {
                 return;
             }
 
+            // En móviles, omitir bordes para reducir carga de memoria
+            // El crash ocurre en libgui.so por demasiados objetos gráficos
+            if (this.isMobile) {
+                console.log('📱 Omitiendo bordes en móvil para optimizar memoria');
+                return;
+            }
+
             // Usar EdgesGeometry con threshold de 30 grados
             // Esto captura bordes donde el ángulo entre caras es > 30 grados
             const edges = new THREE.EdgesGeometry(mesh.geometry, 30);
@@ -584,8 +601,11 @@ class S3Viewer {
             const positions = edges.attributes.position.array;
             let edgesAdded = 0;
 
+            // Limitar cantidad de bordes para evitar crash de memoria
+            const maxEdges = 1000;
+
             // Crear cilindros gruesos para cada segmento de borde
-            for (let i = 0; i < positions.length; i += 6) {
+            for (let i = 0; i < positions.length && edgesAdded < maxEdges; i += 6) {
                 const start = new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]);
                 const end = new THREE.Vector3(positions[i + 3], positions[i + 4], positions[i + 5]);
 
@@ -594,8 +614,8 @@ class S3Viewer {
 
                 if (length < 0.001) continue; // Ignorar segmentos muy pequeños
 
-                // Crear cilindro negro con grosor ajustable
-                const cylinder = new THREE.CylinderGeometry(this.edgeWidth, this.edgeWidth, length, 8);
+                // Crear cilindro negro con grosor ajustable (menos segmentos para optimizar)
+                const cylinder = new THREE.CylinderGeometry(this.edgeWidth, this.edgeWidth, length, 4);
                 const material = new THREE.MeshBasicMaterial({ color: 0x000000 });
                 const cylinderMesh = new THREE.Mesh(cylinder, material);
                 cylinderMesh.userData.isEdge = true; // Marcar como borde para poder actualizarlo
@@ -615,6 +635,8 @@ class S3Viewer {
 
             if (edgesAdded === 0) {
                 console.warn('⚠️ No se encontraron bordes en el BREP');
+            } else if (edgesAdded >= maxEdges) {
+                console.warn(`⚠️ Bordes limitados a ${maxEdges} para optimizar memoria`);
             }
         } catch (error) {
             console.warn('⚠️ Error al extraer boundaries del BREP:', error);
@@ -742,7 +764,14 @@ class S3Viewer {
         const rhinoVertices = rhinoMesh.vertices();
         const vertexCount = this.getCount(rhinoVertices);
 
-        for (let i = 0; i < vertexCount; i++) {
+        // Limitar vértices en móviles para evitar crash de memoria
+        const maxVertices = this.isMobile ? 50000 : 500000;
+        if (vertexCount > maxVertices) {
+            console.warn(`⚠️ Mesh muy grande (${vertexCount} vértices), limitando a ${maxVertices}`);
+        }
+        const actualVertexCount = Math.min(vertexCount, maxVertices);
+
+        for (let i = 0; i < actualVertexCount; i++) {
             const v = this.getItem(rhinoVertices, i);
             // Rhino: X, Y, Z -> Three.js: X, Z, -Y (Z-up a Y-up)
             vertices.push(v[0], v[2], -v[1]);
@@ -756,20 +785,28 @@ class S3Viewer {
 
         for (let i = 0; i < faceCount; i++) {
             const face = this.getItem(rhinoFaces, i);
-            indices.push(face[0], face[1], face[2]);
-            if (face[2] !== face[3]) {
-                indices.push(face[0], face[2], face[3]);
+            // Solo agregar caras si todos los índices están dentro del rango
+            if (face[0] < actualVertexCount && face[1] < actualVertexCount && face[2] < actualVertexCount) {
+                indices.push(face[0], face[1], face[2]);
+                if (face[2] !== face[3] && face[3] < actualVertexCount) {
+                    indices.push(face[0], face[2], face[3]);
+                }
             }
         }
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
 
-        // Material
-        const material = new THREE.MeshPhongMaterial({
-            color: color,
-            side: THREE.DoubleSide,
-            flatShading: false
-        });
+        // Material optimizado para móviles (MeshBasicMaterial es más liviano que MeshPhongMaterial)
+        const material = this.isMobile
+            ? new THREE.MeshBasicMaterial({
+                color: color,
+                side: THREE.DoubleSide
+            })
+            : new THREE.MeshPhongMaterial({
+                color: color,
+                side: THREE.DoubleSide,
+                flatShading: false
+            });
 
         return new THREE.Mesh(geometry, material);
     }
