@@ -581,13 +581,6 @@ class S3Viewer {
                 return;
             }
 
-            // En móviles, omitir bordes para reducir carga de memoria
-            // El crash ocurre en libgui.so por demasiados objetos gráficos
-            if (this.isMobile) {
-                console.log('📱 Omitiendo bordes en móvil para optimizar memoria');
-                return;
-            }
-
             // Usar EdgesGeometry con threshold de 30 grados
             // Esto captura bordes donde el ángulo entre caras es > 30 grados
             const edges = new THREE.EdgesGeometry(mesh.geometry, 30);
@@ -598,6 +591,20 @@ class S3Viewer {
                 return;
             }
 
+            // En móviles usar LineSegments (muy liviano) en vez de cilindros (pesado)
+            if (this.isMobile) {
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0x000000,
+                    linewidth: 2 // Nota: linewidth > 1 solo funciona en algunos dispositivos
+                });
+                const lineSegments = new THREE.LineSegments(edges, lineMaterial);
+                lineSegments.userData.isEdge = true;
+                mesh.add(lineSegments);
+                console.log('📱 Bordes agregados como líneas (modo móvil)');
+                return;
+            }
+
+            // En desktop, usar cilindros para bordes más gruesos
             const positions = edges.attributes.position.array;
             let edgesAdded = 0;
 
